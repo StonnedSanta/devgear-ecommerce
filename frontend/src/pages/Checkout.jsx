@@ -44,7 +44,7 @@ export default function Checkout() {
     };
 
     try {
-      await API.post('/api/orders', orderPayload);
+      await API.post('/orders', orderPayload);
       clearCart();
       setSuccess(true);
     } catch (err) {
