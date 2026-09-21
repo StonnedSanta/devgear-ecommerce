@@ -13,6 +13,8 @@ import { verifyToken, verifyAdmin } from './middleware/auth.js';
 dotenv.config();
 
 const app = express();
+
+// Middlewares
 app.use(cors());
 app.use(express.json());
 
@@ -20,24 +22,31 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/devgear';
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_devgear_key_123';
 
+// Database Connection
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch((err) => console.error('❌ Database connection error:', err));
+  .then(() => console.log('MongoDB connected'))
+  .catch((err) => console.error('Database connection error:', err));
 
-// --- AUTH ROUTES ---
+// AUTH ROUTES
 
-// 1. Register User / Admin
+// 1. Register User (Default role set to 'buyer' for security)
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
+
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ name, email, password: hashedPassword, role: role || 'buyer' });
-    await user.save();
+    const user = new User({
+      name,
+      email,
+      password: hashedPassword,
+      role: 'buyer' // Hardcoded to prevent privilege escalation via body
+    });
 
+    await user.save();
     res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -65,7 +74,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// --- PRODUCT ROUTES ---
+// PRODUCT ROUTES
 
 // Public: Get all products
 app.get('/api/products', async (req, res) => {
@@ -98,7 +107,7 @@ app.delete('/api/products/:id', verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-// --- ORDER & CHECKOUT ROUTES ---
+// ORDER & CHECKOUT ROUTES
 
 // Public: Create Order (Simulated Payment)
 app.post('/api/orders', async (req, res) => {
@@ -147,7 +156,7 @@ app.put('/api/admin/orders/:id/status', verifyToken, verifyAdmin, async (req, re
   }
 });
 
-// --- ANALYTICS ROUTE (Admin-Only) ---
+// ANALYTICS ROUTE (Admin-Only)
 
 app.get('/api/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
   try {
@@ -177,4 +186,4 @@ app.get('/api/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
