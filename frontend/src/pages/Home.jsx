@@ -9,9 +9,8 @@ export default function Home() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    API.get('/api/products')
+    API.get('/products')
       .then((res) => {
-        // Defensive array checks for safe state initialization
         const data = Array.isArray(res.data) ? res.data : (res.data?.products || []);
         setProducts(data);
       })
@@ -37,7 +36,7 @@ export default function Home() {
         <p className="text-muted-foreground">{products.length} Items Available</p>
       </div>
 
-      {products.length === 0 ? (
+      {!Array.isArray(products) || products.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center border rounded-xl bg-card">
           <PackageX className="w-12 h-12 text-muted-foreground mb-3" />
           <h3 className="text-lg font-semibold">No products found</h3>

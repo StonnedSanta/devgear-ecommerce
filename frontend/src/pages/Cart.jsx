@@ -5,7 +5,9 @@ import { Trash2, ShoppingBag, ArrowLeft } from 'lucide-react';
 export default function Cart() {
   const { cart, removeFromCart, updateQuantity, totalPrice, clearCart } = useCart();
 
-  if (cart.length === 0) {
+  const formattedTotal = Number(totalPrice || 0).toFixed(2);
+
+  if (!cart || cart.length === 0) {
     return (
       <div className="max-w-md mx-auto text-center py-16 bg-card border rounded-xl p-8 shadow-sm">
         <ShoppingBag className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -34,6 +36,7 @@ export default function Cart() {
         <div className="md:col-span-2 space-y-4">
           {cart.map((item) => {
             const id = item._id || item.id;
+            const price = Number(item.price || 0);
             return (
               <div key={id} className="flex items-center gap-4 bg-card border rounded-xl p-4 shadow-sm">
                 <img
@@ -43,19 +46,19 @@ export default function Cart() {
                 />
                 <div className="flex-1">
                   <h3 className="font-bold text-lg">{item.name}</h3>
-                  <p className="text-sm text-muted-foreground">${Number(item.price).toFixed(2)} each</p>
+                  <p className="text-sm text-muted-foreground">${price.toFixed(2)} each</p>
                   <div className="flex items-center gap-3 mt-2">
                     <div className="flex items-center border rounded bg-background">
                       <button
                         onClick={() => updateQuantity(id, item.quantity - 1)}
-                        className="px-2 py-0.5 text-sm font-bold"
+                        className="px-2 py-0.5 text-sm font-bold hover:bg-accent rounded-l"
                       >
                         -
                       </button>
                       <span className="px-3 text-xs font-semibold">{item.quantity}</span>
                       <button
                         onClick={() => updateQuantity(id, item.quantity + 1)}
-                        className="px-2 py-0.5 text-sm font-bold"
+                        className="px-2 py-0.5 text-sm font-bold hover:bg-accent rounded-r"
                       >
                         +
                       </button>
@@ -63,13 +66,14 @@ export default function Cart() {
                     <button
                       onClick={() => removeFromCart(id)}
                       className="text-destructive hover:opacity-80 p-1"
+                      title="Remove Item"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
                 <div className="text-right font-extrabold text-lg">
-                  ${(Number(item.price) * item.quantity).toFixed(2)}
+                  ${(price * item.quantity).toFixed(2)}
                 </div>
               </div>
             );
@@ -81,7 +85,7 @@ export default function Cart() {
           <h2 className="text-xl font-bold border-b pb-3">Order Summary</h2>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
-            <span className="font-semibold">${totalPrice.toFixed(2)}</span>
+            <span className="font-semibold">${formattedTotal}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Shipping</span>
@@ -89,11 +93,14 @@ export default function Cart() {
           </div>
           <div className="border-t pt-3 flex justify-between font-extrabold text-lg">
             <span>Total</span>
-            <span>${totalPrice.toFixed(2)}</span>
+            <span>${formattedTotal}</span>
           </div>
-          <button className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-lg hover:opacity-90 mt-4">
+          <Link
+            to="/checkout"
+            className="w-full bg-primary text-primary-foreground font-semibold py-3 rounded-lg hover:opacity-90 block text-center transition"
+          >
             Proceed to Checkout
-          </button>
+          </Link>
         </div>
       </div>
     </div>

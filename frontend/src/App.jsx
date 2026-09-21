@@ -8,6 +8,7 @@ import Cart from './pages/Cart';
 import AdminDashboard from './pages/AdminDashboard';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
+import Checkout from './pages/Checkout';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route path="/checkout" element={<Checkout />} />
               </Routes>
             </main>
           </div>
