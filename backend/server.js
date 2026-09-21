@@ -1,189 +1,830 @@
+import 'dotenv/config';
+
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
+import crypto from 'node:crypto';
 
-import User from './models/User.js';
 import Product from './models/Product.js';
 import Order from './models/Order.js';
-import { verifyToken, verifyAdmin } from './middleware/auth.js';
 
-dotenv.config();
+import {
+  verifyToken,
+  verifyAdmin
+} from './middleware/auth.js';
+
+import authRoutes from './routes/auth.js';
 
 const app = express();
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
+// CONFIGURATION
 
-const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/devgear';
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_devgear_key_123';
+const PORT = Number(process.env.PORT) || 5000;
 
-// Database Connection
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch((err) => console.error('Database connection error:', err));
+const MONGO_URI =
+  process.env.MONGO_URI ||
+  process.env.MONGODB_URI;
+
+if (!MONGO_URI) {
+  console.error(
+    'Missing MongoDB connection string.'
+  );
+
+  console.error(
+    'Set MONGO_URI or MONGODB_URI in your environment.'
+  );
+
+  process.exit(1);
+}
+
+// CORS CONFIGURATION
+
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://localhost:3000'
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests from tools such as Postman and curl.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.warn(
+        `Blocked CORS origin: ${origin}`
+      );
+
+      return callback(
+        new Error('CORS origin is not allowed')
+      );
+    },
+    credentials: true
+  })
+);
+
+// GLOBAL MIDDLEWARE
+
+app.use(
+  express.json({
+    limit: '1mb'
+  })
+);
+
+// HELPER FUNCTIONS
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+const createOrderId = () => {
+  return `DG-${crypto.randomUUID()}`;
+};
+
+const validateProductPayload = (payload) => {
+  const {
+    title,
+    price,
+    category,
+    image,
+    description,
+    stock
+  } = payload;
+
+  if (
+    typeof title !== 'string' ||
+    !title.trim()
+  ) {
+    return 'Product title is required';
+  }
+
+  if (
+    typeof category !== 'string' ||
+    !category.trim()
+  ) {
+    return 'Product category is required';
+  }
+
+  if (
+    typeof image !== 'string' ||
+    !image.trim()
+  ) {
+    return 'Product image is required';
+  }
+
+  if (
+    typeof price !== 'number' ||
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
+    return 'Product price must be a valid non-negative number';
+  }
+
+  if (
+    typeof stock !== 'number' ||
+    !Number.isInteger(stock) ||
+    stock < 0
+  ) {
+    return 'Product stock must be a non-negative integer';
+  }
+
+  if (
+    description !== undefined &&
+    typeof description !== 'string'
+  ) {
+    return 'Product description must be a string';
+  }
+
+  return null;
+};
+
+// HEALTH CHECK
+
+app.get('/api/health', (req, res) => {
+  return res.json({
+    status: 'ok',
+    message: 'DevGear backend is running'
+  });
+});
 
 // AUTH ROUTES
 
-// 1. Register User (Default role set to 'buyer' for security)
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: 'User already exists' });
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      role: 'buyer' // Hardcoded to prevent privilege escalation via body
-    });
-
-    await user.save();
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 2. Login User / Admin
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
-
-    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-
-    res.json({
-      token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+app.use('/api/auth', authRoutes);
 
 // PRODUCT ROUTES
 
-// Public: Get all products
+// Get all products
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
-    res.json(products);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const products = await Product.find()
+      .sort({ createdAt: -1 });
+
+    return res.json(products);
+  } catch (error) {
+    console.error(
+      'Fetch products error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      message: 'Unable to fetch products'
+    });
   }
 });
 
-// Admin-Only: Add new product
-app.post('/api/products', verifyToken, verifyAdmin, async (req, res) => {
+// Get a single product
+app.get('/api/products/:id', async (req, res) => {
   try {
-    const product = new Product(req.body);
-    await product.save();
-    res.status(201).json(product);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    const { id } = req.params;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        message: 'Invalid product ID'
+      });
+    }
+
+    const product = await Product.findById(id);
+
+    if (!product) {
+      return res.status(404).json({
+        message: 'Product not found'
+      });
+    }
+
+    return res.json(product);
+  } catch (error) {
+    console.error(
+      'Fetch product error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      message: 'Unable to fetch product'
+    });
   }
 });
 
-// Admin-Only: Delete product
-app.delete('/api/products/:id', verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    await Product.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Product deleted' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+// Create a product
+app.post(
+  '/api/products',
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const {
+        title,
+        price,
+        category,
+        image,
+        description = '',
+        stock
+      } = req.body;
+
+      const payload = {
+        title,
+        price,
+        category,
+        image,
+        description,
+        stock
+      };
+
+      const validationError =
+        validateProductPayload(payload);
+
+      if (validationError) {
+        return res.status(400).json({
+          message: validationError
+        });
+      }
+
+      const product = new Product(payload);
+
+      await product.save();
+
+      return res.status(201).json(product);
+    } catch (error) {
+      console.error(
+        'Create product error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        message: 'Unable to create product'
+      });
+    }
   }
-});
+);
 
-// ORDER & CHECKOUT ROUTES
+// Update a product
+app.put(
+  '/api/products/:id',
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-// Public: Create Order (Simulated Payment)
+      if (!isValidObjectId(id)) {
+        return res.status(400).json({
+          message: 'Invalid product ID'
+        });
+      }
+
+      const {
+        title,
+        price,
+        category,
+        image,
+        description = '',
+        stock
+      } = req.body;
+
+      const payload = {
+        title,
+        price,
+        category,
+        image,
+        description,
+        stock
+      };
+
+      const validationError =
+        validateProductPayload(payload);
+
+      if (validationError) {
+        return res.status(400).json({
+          message: validationError
+        });
+      }
+
+      const updatedProduct =
+        await Product.findByIdAndUpdate(
+          id,
+          payload,
+          {
+            new: true,
+            runValidators: true
+          }
+        );
+
+      if (!updatedProduct) {
+        return res.status(404).json({
+          message: 'Product not found'
+        });
+      }
+
+      return res.json(updatedProduct);
+    } catch (error) {
+      console.error(
+        'Update product error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        message: 'Unable to update product'
+      });
+    }
+  }
+);
+
+// Delete a product
+app.delete(
+  '/api/products/:id',
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!isValidObjectId(id)) {
+        return res.status(400).json({
+          message: 'Invalid product ID'
+        });
+      }
+
+      const deletedProduct =
+        await Product.findByIdAndDelete(id);
+
+      if (!deletedProduct) {
+        return res.status(404).json({
+          message: 'Product not found'
+        });
+      }
+
+      return res.json({
+        message: 'Product deleted successfully',
+        product: deletedProduct
+      });
+    } catch (error) {
+      console.error(
+        'Delete product error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        message: 'Unable to delete product'
+      });
+    }
+  }
+);
+
+// ORDER ROUTES
+
+// Create an order
 app.post('/api/orders', async (req, res) => {
   try {
-    const { customerName, items, totalAmount, paymentMethod } = req.body;
-    const orderId = 'DG-' + Math.floor(100000 + Math.random() * 900000);
+    const {
+      customerName,
+      items,
+      paymentMethod
+    } = req.body;
 
-    const newOrder = new Order({ orderId, customerName, items, totalAmount, paymentMethod });
-    await newOrder.save();
+    // Validate customer name
+    if (
+      typeof customerName !== 'string' ||
+      !customerName.trim()
+    ) {
+      return res.status(400).json({
+        message: 'Customer name is required'
+      });
+    }
 
-    res.status(201).json(newOrder);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+    // Validate items
+    if (
+      !Array.isArray(items) ||
+      items.length === 0
+    ) {
+      return res.status(400).json({
+        message: 'Order must contain at least one item'
+      });
+    }
 
-// Public: Get Order for Tracking
-app.get('/api/orders/:orderId', async (req, res) => {
-  try {
-    const order = await Order.findOne({ orderId: req.params.orderId });
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    res.json(order);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    // Validate payment method
+    const validPaymentMethods = [
+      'UPI',
+      'CARD',
+      'COD'
+    ];
 
-// Admin-Only: Get all orders
-app.get('/api/admin/orders', verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const orders = await Order.find().sort({ createdAt: -1 });
-    res.json(orders);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    if (
+      !validPaymentMethods.includes(paymentMethod)
+    ) {
+      return res.status(400).json({
+        message: 'Invalid payment method'
+      });
+    }
 
-// Admin-Only: Update Order Status
-app.put('/api/admin/orders/:id/status', verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
-    res.json(order);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+    // Validate individual items
+    for (const item of items) {
+      if (
+        !item.productId ||
+        !isValidObjectId(item.productId)
+      ) {
+        return res.status(400).json({
+          message: 'Each item must contain a valid productId'
+        });
+      }
 
-// ANALYTICS ROUTE (Admin-Only)
+      if (
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1
+      ) {
+        return res.status(400).json({
+          message: 'Each item quantity must be at least 1'
+        });
+      }
+    }
 
-app.get('/api/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const totalProducts = await Product.countDocuments();
-    const totalOrders = await Order.countDocuments();
+    // Combine duplicate product IDs
+    const quantityByProduct = new Map();
 
-    const categoryStats = await Product.aggregate([
-      { $group: { _id: '$category', count: {$sum: 1 } } }
-    ]);
+    for (const item of items) {
+      const productId = item.productId;
+      const quantity = item.quantity;
 
-    res.json({
-      totalProducts,
-      totalOrders,
-      chartData: {
-        labels: categoryStats.map((c) => c._id),
-        datasets: [
-          {
-            label: 'Product Categories',
-            data: categoryStats.map((c) => c.count),
-            backgroundColor: ['#6366f1', '#10b981', '#f59e0b']
-          }
-        ]
+      const currentQuantity =
+        quantityByProduct.get(productId) || 0;
+
+      quantityByProduct.set(
+        productId,
+        currentQuantity + quantity
+      );
+    }
+
+    const productIds = [
+      ...quantityByProduct.keys()
+    ];
+
+    // Fetch products from the database
+    const products = await Product.find({
+      _id: {
+        $in: productIds
       }
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+
+    if (
+      products.length !== productIds.length
+    ) {
+      return res.status(400).json({
+        message: 'One or more products do not exist'
+      });
+    }
+
+    const productMap = new Map(
+      products.map((product) => [
+        product._id.toString(),
+        product
+      ])
+    );
+
+    const orderItems = [];
+    let totalAmount = 0;
+
+    // Calculate total using database prices
+    for (
+      const [productId, quantity]
+      of quantityByProduct
+    ) {
+      const product = productMap.get(productId);
+
+      if (!product) {
+        return res.status(404).json({
+          message: 'Product not found'
+        });
+      }
+
+      if (product.stock < quantity) {
+        return res.status(400).json({
+          message: `Insufficient stock for ${product.title}`
+        });
+      }
+
+      const itemTotal =
+        product.price * quantity;
+
+      totalAmount += itemTotal;
+
+      orderItems.push({
+        productId: product._id,
+        title: product.title,
+        price: product.price,
+        quantity
+      });
+    }
+
+    totalAmount = Number(
+      totalAmount.toFixed(2)
+    );
+
+    const orderId = createOrderId();
+
+    const newOrder = new Order({
+      orderId,
+      customerName: customerName.trim(),
+      items: orderItems,
+      totalAmount,
+      paymentMethod
+    });
+
+    await newOrder.save();
+
+    return res.status(201).json(newOrder);
+  } catch (error) {
+    console.error(
+      'Create order error:',
+      error.message
+    );
+
+    return res.status(400).json({
+      message: 'Unable to create order'
+    });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// Get an order by order ID
+app.get(
+  '/api/orders/:orderId',
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
+
+      const order = await Order.findOne({
+        orderId
+      });
+
+      if (!order) {
+        return res.status(404).json({
+          message: 'Order not found'
+        });
+      }
+
+      return res.json(order);
+    } catch (error) {
+      console.error(
+        'Fetch order error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        message: 'Unable to fetch order'
+      });
+    }
+  }
+);
+
+// ADMIN ORDER ROUTES
+
+// Get all orders
+app.get(
+  '/api/admin/orders',
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const orders = await Order.find()
+        .sort({ createdAt: -1 });
+
+      return res.json(orders);
+    } catch (error) {
+      console.error(
+        'Fetch admin orders error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        message: 'Unable to fetch orders'
+      });
+    }
+  }
+);
+
+// Update order status
+app.put(
+  '/api/admin/orders/:id/status',
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const validStatuses = [
+        'Placed',
+        'Processing',
+        'Shipped',
+        'Delivered'
+      ];
+
+      if (!isValidObjectId(id)) {
+        return res.status(400).json({
+          message: 'Invalid order ID'
+        });
+      }
+
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          message: 'Invalid order status'
+        });
+      }
+
+      const order =
+        await Order.findByIdAndUpdate(
+          id,
+          { status },
+          {
+            new: true,
+            runValidators: true
+          }
+        );
+
+      if (!order) {
+        return res.status(404).json({
+          message: 'Order not found'
+        });
+      }
+
+      return res.json(order);
+    } catch (error) {
+      console.error(
+        'Update order status error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        message: 'Unable to update order status'
+      });
+    }
+  }
+);
+
+// ADMIN ANALYTICS
+
+app.get(
+  '/api/admin/stats',
+  verifyToken,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const totalProducts =
+        await Product.countDocuments();
+
+      const totalOrders =
+        await Order.countDocuments();
+
+      const lowStockProducts =
+        await Product.countDocuments({
+          stock: {
+            $lte: 5
+          }
+        });
+
+      const revenueStats =
+        await Order.aggregate([
+          {
+            $group: {
+              _id: null,
+              totalRevenue: {
+                $sum: '$totalAmount'
+              }
+            }
+          }
+        ]);
+
+      const totalRevenue =
+        revenueStats[0]?.totalRevenue || 0;
+
+      const categoryStats =
+        await Product.aggregate([
+          {
+            $group: {
+              _id: '$category',
+              count: {
+                $sum: 1
+              }
+            }
+          },
+          {
+            $sort: {
+              count: -1
+            }
+          }
+        ]);
+
+      return res.json({
+        totalProducts,
+        totalOrders,
+        totalRevenue: Number(
+          totalRevenue.toFixed(2)
+        ),
+        lowStockProducts,
+
+        chartData: {
+          labels: categoryStats.map(
+            (category) => category._id
+          ),
+
+          datasets: [
+            {
+              label: 'Product Categories',
+
+              data: categoryStats.map(
+                (category) => category.count
+              ),
+
+              backgroundColor: [
+                '#6366f1',
+                '#10b981',
+                '#f59e0b',
+                '#ef4444',
+                '#8b5cf6',
+                '#ec4899',
+                '#14b8a6'
+              ]
+            }
+          ]
+        }
+      });
+    } catch (error) {
+      console.error(
+        'Analytics error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        message: 'Unable to fetch analytics'
+      });
+    }
+  }
+);
+
+// ERROR HANDLING
+
+// Handle unknown routes
+app.use((req, res) => {
+  return res.status(404).json({
+    message: 'Route not found'
+  });
+});
+
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error(
+    'Unhandled server error:',
+    error.message
+  );
+
+  return res.status(500).json({
+    message: 'Internal server error'
+  });
+});
+
+// DATABASE CONNECTION & SERVER STARTUP
+
+const startServer = async () => {
+  try {
+    console.log(
+      'Connecting to MongoDB...'
+    );
+
+    await mongoose.connect(
+      MONGO_URI,
+      {
+        serverSelectionTimeoutMS: 10000
+      }
+    );
+
+    console.log(
+      'MongoDB connected successfully'
+    );
+
+    app.listen(
+      PORT,
+      '0.0.0.0',
+      () => {
+        console.log(
+          `Server running on port ${PORT}`
+        );
+
+        console.log(
+          `Health check: http://localhost:${PORT}/api/health`
+        );
+      }
+    );
+  } catch (error) {
+    console.error(
+      'Database connection error:',
+      error.message
+    );
+
+    process.exitCode = 1;
+  }
+};
+
+startServer();
