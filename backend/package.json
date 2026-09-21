@@ -16,6 +16,7 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.6.0",
-    "mongoose": "^8.3.1"
+    "mongoose": "^8.3.1",
+    "prompts": "^2.4.2"
   }
 }
