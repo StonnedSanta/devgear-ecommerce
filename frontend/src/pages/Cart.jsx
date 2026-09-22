@@ -2,10 +2,19 @@ import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { Trash2, ShoppingBag, ArrowLeft } from 'lucide-react';
 
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(amount) || 0);
+};
+
 export default function Cart() {
     const { cart, removeFromCart, updateQuantity, totalPrice, clearCart } = useCart();
 
-    const formattedTotal = Number(totalPrice || 0).toFixed(2);
+    const formattedTotal = formatCurrency(totalPrice);
 
     if (!cart || cart.length === 0) {
         return (
@@ -46,7 +55,7 @@ export default function Cart() {
                                 />
                                 <div className="flex-1">
                                     <h3 className="font-bold text-lg">{item.name}</h3>
-                                    <p className="text-sm text-muted-foreground">${price.toFixed(2)} each</p>
+                                    <p className="text-sm text-muted-foreground">{formatCurrency(price)} each</p>
                                     <div className="flex items-center gap-3 mt-2">
                                         <div className="flex items-center border rounded bg-background">
                                             <button
@@ -73,7 +82,7 @@ export default function Cart() {
                                     </div>
                                 </div>
                                 <div className="text-right font-extrabold text-lg">
-                                    ${(price * item.quantity).toFixed(2)}
+                                    {formatCurrency(price * item.quantity)}
                                 </div>
                             </div>
                         );
@@ -85,7 +94,7 @@ export default function Cart() {
                     <h2 className="text-xl font-bold border-b pb-3">Order Summary</h2>
                     <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Subtotal</span>
-                        <span className="font-semibold">${formattedTotal}</span>
+                        <span className="font-semibold">{formattedTotal}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Shipping</span>
@@ -93,7 +102,7 @@ export default function Cart() {
                     </div>
                     <div className="border-t pt-3 flex justify-between font-extrabold text-lg">
                         <span>Total</span>
-                        <span>${formattedTotal}</span>
+                        <span>{formattedTotal}</span>
                     </div>
                     <Link
                         to="/checkout"

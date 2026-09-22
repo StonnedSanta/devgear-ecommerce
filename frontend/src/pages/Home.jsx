@@ -1,8 +1,17 @@
-
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../api/axios';
 import { ShoppingCart, PackageX } from 'lucide-react';
+
+
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Number(amount) || 0);
+};
 
 export default function Home() {
     const [products, setProducts] = useState([]);
@@ -85,7 +94,7 @@ export default function Home() {
                         const productImage =
                             product.image || product.imageUrl || 'https://via.placeholder.com/300';
 
-                        const productPrice = Number(product.price || 0).toFixed(2);
+                        const productPrice = formatCurrency(product.price);
 
                         return (
                             <div
@@ -115,7 +124,7 @@ export default function Home() {
 
                                     <div className="mt-4 flex items-center justify-between">
                                         <span className="text-lg font-extrabold">
-                                            ${productPrice}
+                                            {productPrice}
                                         </span>
 
                                         <Link

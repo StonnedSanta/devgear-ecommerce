@@ -12,6 +12,15 @@ import {
     ShieldCheck,
 } from 'lucide-react';
 
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(amount) || 0);
+};
+
 export default function ProductDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -146,7 +155,7 @@ export default function ProductDetails() {
                         </div>
 
                         <div className="text-3xl font-bold text-foreground">
-                            ${price.toFixed(2)}
+                            {formatCurrency(price)}
                         </div>
 
                         <p className="text-muted-foreground leading-relaxed text-sm">

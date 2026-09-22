@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
@@ -33,8 +34,31 @@ export default function Checkout() {
         });
     };
 
+    const loadRazorpayScript = () => {
+        return new Promise((resolve) => {
+            if (window.Razorpay) {
+                resolve(true);
+                return;
+            }
+
+            const script = document.createElement('script');
+
+            script.src =
+                'https://checkout.razorpay.com/v1/checkout.js';
+
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+
+            document.body.appendChild(script);
+        });
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+        console.log(
+            'Selected payment method:',
+            paymentMethod
+        );
 
         if (cart.length === 0) {
             return;
@@ -48,41 +72,149 @@ export default function Checkout() {
         setLoading(true);
         setError('');
 
+        const orderItems = cart.map((item) => ({
+            productId: item._id || item.id,
+            quantity: item.quantity
+        }));
+
         const orderPayload = {
             customerName: shippingInfo.fullName.trim(),
-
-            items: cart.map((item) => ({
-                productId: item._id || item.id,
-                quantity: item.quantity
-            })),
-
+            items: orderItems,
             paymentMethod
         };
 
-        console.log('Order Payload:', orderPayload);
-
         try {
-            const response = await API.post(
-                '/orders',
-                orderPayload
+            // COD uses the existing direct order endpoint.
+            if (paymentMethod === 'COD') {
+                const response = await API.post(
+                    '/orders',
+                    orderPayload
+                );
+
+                console.log(
+                    'COD order created:',
+                    response.data
+                );
+
+                clearCart();
+                setSuccess(true);
+                return;
+            }
+            console.log(
+                'Razorpay flow started for:',
+                paymentMethod
+            );
+            // Load Razorpay Checkout script.
+            const scriptLoaded = await loadRazorpayScript();
+
+            if (!scriptLoaded) {
+                throw new Error(
+                    'Unable to load Razorpay Checkout'
+                );
+            }
+
+            // Create Razorpay payment order.
+            const paymentOrderResponse = await API.post(
+                '/payments/create-order',
+                {
+                    customerName: orderPayload.customerName,
+                    items: orderItems
+                }
             );
 
-            console.log('Order Created:', response.data);
+            const {
+                keyId,
+                orderId,
+                amount,
+                currency
+            } = paymentOrderResponse.data;
 
-            clearCart();
-            setSuccess(true);
+            const options = {
+                key:
+                    keyId ||
+                    import.meta.env.VITE_RAZORPAY_KEY_ID,
+
+                amount,
+                currency,
+
+                name: 'DevGear',
+                description: 'DevGear purchase',
+
+                order_id: orderId,
+
+                // Request UPI as payment method 
+                method: paymentMethod === 'UPI'
+                    ? 'upi'
+                    : undefined,
+
+                prefill: {
+                    name: shippingInfo.fullName,
+                    email: shippingInfo.email
+                },
+
+                theme: {
+                    color: '#6366f1'
+                },
+
+                // Runs after successful Razorpay payment.
+                handler: async (paymentResponse) => {
+                    try {
+                        await API.post(
+                            '/payments/verify',
+                            {
+                                ...paymentResponse,
+                                customerName:
+                                    orderPayload.customerName,
+                                items: orderItems,
+                                paymentMethod
+                            }
+                        );
+
+                        clearCart();
+                        setSuccess(true);
+                    } catch (verificationError) {
+                        setError(
+                            verificationError.response?.data
+                                ?.message ||
+                            'Payment succeeded, but order verification failed. Contact support.'
+                        );
+                    } finally {
+                        setLoading(false);
+                    }
+                },
+
+                modal: {
+                    ondismiss: () => {
+                        setLoading(false);
+                    }
+                }
+            };
+
+            const razorpayCheckout =
+                new window.Razorpay(options);
+
+            razorpayCheckout.on(
+                'payment.failed',
+                (paymentError) => {
+                    setError(
+                        paymentError.error?.description ||
+                        'Payment failed. Please try again.'
+                    );
+
+                    setLoading(false);
+                }
+            );
+
+            razorpayCheckout.open();
         } catch (err) {
             console.error('Checkout failed:', err);
-            console.error(
-                'Backend response:',
-                err.response?.data
-            );
 
             setError(
                 err.response?.data?.message ||
+                err.message ||
                 'Failed to place order. Please try again.'
             );
-        } finally {
+
             setLoading(false);
         }
     };
@@ -309,7 +441,7 @@ export default function Checkout() {
                         ) : (
                             <>
                                 <Lock className="w-4 h-4" />
-                                Place Order ($
+                                Place Order (₹
                                 {totalPrice.toFixed(2)})
                             </>
                         )}
@@ -347,7 +479,7 @@ export default function Checkout() {
                                     </div>
 
                                     <span className="font-bold">
-                                        $
+                                        ₹
                                         {(
                                             Number(item.price) *
                                             item.quantity
@@ -365,7 +497,7 @@ export default function Checkout() {
                             </span>
 
                             <span className="font-semibold">
-                                ${totalPrice.toFixed(2)}
+                                ₹{totalPrice.toFixed(2)}
                             </span>
                         </div>
 
@@ -383,7 +515,7 @@ export default function Checkout() {
                             <span>Total</span>
 
                             <span>
-                                ${totalPrice.toFixed(2)}
+                                ₹{totalPrice.toFixed(2)}
                             </span>
                         </div>
                     </div>

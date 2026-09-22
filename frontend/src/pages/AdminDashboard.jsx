@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import API from '../api/axios';
 import { Plus, Trash2, Edit, XCircle, DollarSign, ShoppingCart, AlertTriangle } from 'lucide-react';
 
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(Number(amount) || 0);
+};
+
 const EMPTY_FORM = {
     title: '',
     description: '',
@@ -244,7 +253,7 @@ export default function AdminDashboard() {
                         Total Revenue
                     </p>
                     <h2 className="text-2xl font-bold mt-1">
-                        ${totalRevenue.toFixed(2)}
+                        {formatCurrency(totalRevenue)}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-1">
                         Across all created orders
@@ -297,7 +306,7 @@ export default function AdminDashboard() {
                                     <div className="flex justify-between text-sm mb-1">
                                         <span>{date}</span>
                                         <span className="font-semibold">
-                                            ${amount.toFixed(2)}
+                                            {formatCurrency(amount)}
                                         </span>
                                     </div>
                                     <div className="h-3 rounded-full bg-muted overflow-hidden">
@@ -333,7 +342,7 @@ export default function AdminDashboard() {
                                     <div className="flex justify-between text-sm mb-1">
                                         <span>{category}</span>
                                         <span className="font-semibold">
-                                            ${amount.toFixed(2)}
+                                            {formatCurrency(amount)}
                                         </span>
                                     </div>
                                     <div className="h-3 rounded-full bg-muted overflow-hidden">
@@ -399,7 +408,7 @@ export default function AdminDashboard() {
                     <input
                         type="number"
                         name="price"
-                        placeholder="Price ($)"
+                        placeholder="Price (₹)"
                         value={formData.price}
                         onChange={handleChange}
                         required
@@ -500,7 +509,7 @@ export default function AdminDashboard() {
                                                 </td>
 
                                                 <td className="p-3 font-semibold">
-                                                    ${Number(product.price || 0).toFixed(2)}
+                                                    {formatCurrency(product.price)}
                                                 </td>
 
                                                 <td className="p-3">
