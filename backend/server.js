@@ -1,9 +1,11 @@
+
 import 'dotenv/config';
 
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import crypto from 'node:crypto';
+import Razorpay from 'razorpay';
 
 import Product from './models/Product.js';
 import Order from './models/Order.js';
@@ -20,6 +22,16 @@ const app = express();
 // CONFIGURATION
 
 const PORT = Number(process.env.PORT) || 5000;
+
+const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+const razorpay = razorpayKeyId && razorpayKeySecret
+  ? new Razorpay({
+    key_id: razorpayKeyId,
+    key_secret: razorpayKeySecret
+  })
+  : null;
 
 const MONGO_URI =
   process.env.MONGO_URI ||
@@ -377,97 +389,65 @@ app.delete(
 
 // ORDER ROUTES
 
-
-app.post('/api/orders', async (req, res) => {
+const createOrderWithStock = async ({
+  customerName,
+  items,
+  paymentMethod
+}) => {
   const session = await mongoose.startSession();
 
   try {
-    const {
-      customerName,
-      items,
-      paymentMethod
-    } = req.body;
+    const validPaymentMethods = ['UPI', 'CARD', 'COD'];
 
-    // Validate customer name
     if (
       typeof customerName !== 'string' ||
       !customerName.trim()
     ) {
-      return res.status(400).json({
-        message: 'Customer name is required'
-      });
+      throw new Error('Customer name is required');
     }
 
-    // Validate items
-    if (
-      !Array.isArray(items) ||
-      items.length === 0
-    ) {
-      return res.status(400).json({
-        message: 'Order must contain at least one item'
-      });
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Order must contain at least one item');
     }
-
-    // Validate payment method
-    const validPaymentMethods = [
-      'UPI',
-      'CARD',
-      'COD'
-    ];
 
     if (!validPaymentMethods.includes(paymentMethod)) {
-      return res.status(400).json({
-        message: 'Invalid payment method'
-      });
+      throw new Error('Invalid payment method');
     }
 
-    // Validate individual items
     for (const item of items) {
       if (
         !item.productId ||
         !isValidObjectId(item.productId)
       ) {
-        return res.status(400).json({
-          message: 'Each item must contain a valid productId'
-        });
+        throw new Error('Each item must contain a valid productId');
       }
 
       if (
         !Number.isInteger(item.quantity) ||
         item.quantity < 1
       ) {
-        return res.status(400).json({
-          message: 'Each item quantity must be at least 1'
-        });
+        throw new Error('Each item quantity must be at least 1');
       }
     }
 
-    // Combine duplicate product IDs
     const quantityByProduct = new Map();
 
     for (const item of items) {
-      const productId = item.productId;
-      const quantity = item.quantity;
-
       const currentQuantity =
-        quantityByProduct.get(productId) || 0;
+        quantityByProduct.get(item.productId) || 0;
 
       quantityByProduct.set(
-        productId,
-        currentQuantity + quantity
+        item.productId,
+        currentQuantity + item.quantity
       );
     }
 
-    const productIds = [
-      ...quantityByProduct.keys()
-    ];
+    const productIds = [...quantityByProduct.keys()];
+    let createdOrder;
 
     await session.withTransaction(async () => {
-      // Fetch products inside the transaction
       const products = await Product.find({
-        _id: {
-          $in: productIds
-        }
+        _id: { $in: productIds }
       }).session(session);
 
       if (products.length !== productIds.length) {
@@ -484,11 +464,7 @@ app.post('/api/orders', async (req, res) => {
       const orderItems = [];
       let totalAmount = 0;
 
-      // Validate stock and prepare order items
-      for (
-        const [productId, quantity]
-        of quantityByProduct
-      ) {
+      for (const [productId, quantity] of quantityByProduct) {
         const product = productMap.get(productId);
 
         if (!product) {
@@ -501,10 +477,7 @@ app.post('/api/orders', async (req, res) => {
           );
         }
 
-        const itemTotal =
-          product.price * quantity;
-
-        totalAmount += itemTotal;
+        totalAmount += product.price * quantity;
 
         orderItems.push({
           productId: product._id,
@@ -514,33 +487,22 @@ app.post('/api/orders', async (req, res) => {
         });
       }
 
-      totalAmount = Number(
-        totalAmount.toFixed(2)
-      );
+      totalAmount = Number(totalAmount.toFixed(2));
 
-      // Deduct stock atomically
-      for (
-        const [productId, quantity]
-        of quantityByProduct
-      ) {
-        const updatedProduct =
-          await Product.findOneAndUpdate(
-            {
-              _id: productId,
-              stock: {
-                $gte: quantity
-              }
-            },
-            {
-              $inc: {
-                stock: -quantity
-              }
-            },
-            {
-              new: true,
-              session
-            }
-          );
+      for (const [productId, quantity] of quantityByProduct) {
+        const updatedProduct = await Product.findOneAndUpdate(
+          {
+            _id: productId,
+            stock: { $gte: quantity }
+          },
+          {
+            $inc: { stock: -quantity }
+          },
+          {
+            new: true,
+            session
+          }
+        );
 
         if (!updatedProduct) {
           throw new Error(
@@ -549,24 +511,29 @@ app.post('/api/orders', async (req, res) => {
         }
       }
 
-      // Create order
-      const orderId = createOrderId();
-
-      const newOrder = new Order({
-        orderId,
+      createdOrder = new Order({
+        orderId: createOrderId(),
         customerName: customerName.trim(),
         items: orderItems,
         totalAmount,
         paymentMethod
       });
 
-      await newOrder.save({ session });
-
-      // Store the created order for the response
-      req.createdOrder = newOrder;
+      await createdOrder.save({ session });
     });
 
-    return res.status(201).json(req.createdOrder);
+    return createdOrder;
+  } finally {
+    await session.endSession();
+  }
+};
+
+// Create a normal order (used for COD).
+app.post('/api/orders', async (req, res) => {
+  try {
+    const createdOrder = await createOrderWithStock(req.body);
+
+    return res.status(201).json(createdOrder);
   } catch (error) {
     console.error(
       'Create order error:',
@@ -576,8 +543,173 @@ app.post('/api/orders', async (req, res) => {
     return res.status(400).json({
       message: error.message || 'Failed to create order'
     });
-  } finally {
-    await session.endSession();
+  }
+});
+
+// Create a Razorpay payment order.
+// Product prices must be stored in INR for this integration.
+app.post('/api/payments/create-order', async (req, res) => {
+  try {
+    if (!razorpay) {
+      return res.status(500).json({
+        message: 'Razorpay is not configured on the server'
+      });
+    }
+
+    const { customerName, items } = req.body;
+
+    if (
+      typeof customerName !== 'string' ||
+      !customerName.trim()
+    ) {
+      return res.status(400).json({
+        message: 'Customer name is required'
+      });
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        message: 'Order must contain at least one item'
+      });
+    }
+
+    const quantityByProduct = new Map();
+
+    for (const item of items) {
+      if (
+        !item.productId ||
+        !isValidObjectId(item.productId) ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1
+      ) {
+        return res.status(400).json({
+          message: 'Invalid product or quantity'
+        });
+      }
+
+      quantityByProduct.set(
+        item.productId,
+        (quantityByProduct.get(item.productId) || 0) + item.quantity
+      );
+    }
+
+    const products = await Product.find({
+      _id: { $in: [...quantityByProduct.keys()] }
+    });
+
+    if (products.length !== quantityByProduct.size) {
+      return res.status(400).json({
+        message: 'One or more products do not exist'
+      });
+    }
+
+    let totalAmount = 0;
+
+    for (const product of products) {
+      const quantity = quantityByProduct.get(product._id.toString());
+
+      if (product.stock < quantity) {
+        return res.status(400).json({
+          message: `Insufficient stock for ${product.title}`
+        });
+      }
+
+      totalAmount += product.price * quantity;
+    }
+
+    totalAmount = Number(totalAmount.toFixed(2));
+
+    const razorpayOrder = await razorpay.orders.create({
+      amount: Math.round(totalAmount * 100),
+      currency: 'INR',
+      receipt: `DG-${Date.now()}`,
+      notes: {
+        customerName: customerName.trim()
+      }
+    });
+
+    return res.status(201).json({
+      keyId: razorpayKeyId,
+      orderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency
+    });
+  } catch (error) {
+    console.error(
+      'Create Razorpay order error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      message: 'Unable to create payment order'
+    });
+  }
+});
+
+// Verify Razorpay payment, then create the real DevGear order
+// and deduct stock only after signature verification succeeds.
+app.post('/api/payments/verify', async (req, res) => {
+  try {
+    if (!razorpayKeySecret) {
+      return res.status(500).json({
+        message: 'Razorpay is not configured on the server'
+      });
+    }
+
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      customerName,
+      items,
+      paymentMethod
+    } = req.body;
+
+    if (
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
+    ) {
+      return res.status(400).json({
+        message: 'Missing Razorpay payment details'
+      });
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', razorpayKeySecret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    const signaturesMatch = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature),
+      Buffer.from(razorpay_signature)
+    );
+
+    if (!signaturesMatch) {
+      return res.status(400).json({
+        message: 'Payment verification failed'
+      });
+    }
+
+    const createdOrder = await createOrderWithStock({
+      customerName,
+      items,
+      paymentMethod: paymentMethod === 'UPI' ? 'UPI' : 'CARD'
+    });
+
+    return res.status(201).json({
+      message: 'Payment verified and order created',
+      order: createdOrder
+    });
+  } catch (error) {
+    console.error(
+      'Verify Razorpay payment error:',
+      error.message
+    );
+
+    return res.status(400).json({
+      message: error.message || 'Unable to verify payment'
+    });
   }
 });
 
