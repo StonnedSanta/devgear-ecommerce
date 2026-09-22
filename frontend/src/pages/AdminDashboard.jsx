@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import API from '../api/axios';
-import { Plus, Trash2, Edit, XCircle, DollarSign, ShoppingCart, AlertTriangle } from 'lucide-react';
+import {
+    Plus,
+    Trash2,
+    Edit,
+    XCircle,
+    TrendingUp,
+    BarChart3,
+    CalendarDays,
+    Layers,
+    ArrowUpRight,
+} from 'lucide-react';
 
 const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -198,19 +208,36 @@ export default function AdminDashboard() {
         .slice(0, 6);
 
     const dailySales = orders.reduce((accumulator, order) => {
-        const date = order.createdAt
-            ? new Date(order.createdAt).toLocaleDateString()
-            : 'Unknown';
+        if (!order.createdAt) return accumulator;
 
-        accumulator[date] =
-            (accumulator[date] || 0) + Number(order.totalAmount || 0);
+        const dateKey = new Date(order.createdAt)
+            .toISOString()
+            .slice(0, 10);
+
+        accumulator[dateKey] =
+            (accumulator[dateKey] || 0) +
+            Number(order.totalAmount || 0);
 
         return accumulator;
     }, {});
 
+    const formatSalesDate = (dateKey) => {
+        const date = new Date(`${dateKey}T00:00:00`);
+
+        return date.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+        });
+    };
+
     const dailySalesData = Object.entries(dailySales)
-        .sort(([first], [second]) => new Date(first) - new Date(second))
-        .slice(-7);
+        .sort(([first], [second]) => first.localeCompare(second))
+        .slice(-7)
+        .map(([date, amount]) => [
+            formatSalesDate(date),
+            amount,
+        ]);
 
     const maxCategorySales = Math.max(
         ...categorySalesData.map(([, amount]) => amount),
@@ -221,6 +248,22 @@ export default function AdminDashboard() {
         ...dailySalesData.map(([, amount]) => amount),
         1
     );
+
+    const totalCategoryRevenue = categorySalesData.reduce(
+        (sum, [, amount]) => sum + amount,
+        0
+    );
+
+    const totalDailyRevenue = dailySalesData.reduce(
+        (sum, [, amount]) => sum + amount,
+        0
+    );
+
+    const getPercentage = (amount, total) => {
+        if (!total || total <= 0) return 0;
+
+        return Math.round((amount / total) * 100);
+    };
 
     return (
         <div className="space-y-8">
@@ -286,78 +329,266 @@ export default function AdminDashboard() {
             </div>
 
             {/* Sales Analytics */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-card border rounded-xl p-6 shadow-sm">
-                    <h2 className="text-xl font-bold mb-1">
-                        Sales Trend
-                    </h2>
-                    <p className="text-sm text-muted-foreground mb-6">
-                        Revenue from the last seven order dates
-                    </p>
 
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+                {/* Sales Trend */}
+
+                <div className="bg-card border rounded-2xl p-6 shadow-sm">
+
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-4">
+
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                                    <TrendingUp className="h-5 w-5 text-primary" />
+                                </div>
+
+                                <h2 className="text-xl font-bold">
+                                    Sales Trend
+                                </h2>
+                            </div>
+
+                            <p className="text-sm text-muted-foreground mt-3">
+                                Revenue performance across recent order dates
+                            </p>
+                        </div>
+
+                        <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+                            Last 7 dates
+                        </span>
+
+                    </div>
+
+                    {/* Summary */}
+                    <div className="mt-6 rounded-xl border bg-muted/30 p-4">
+
+                        <div className="flex items-center justify-between gap-3">
+
+                            <div>
+                                <p className="text-xs font-medium text-muted-foreground">
+                                    Recent Revenue
+                                </p>
+
+                                <p className="text-2xl font-extrabold tracking-tight mt-1">
+                                    {formatCurrency(totalDailyRevenue)}
+                                </p>
+                            </div>
+
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10">
+                                <ArrowUpRight className="h-5 w-5 text-emerald-600" />
+                            </div>
+
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            <span>Based on recorded order dates</span>
+                        </div>
+
+                    </div>
+
+                    {/* Chart */}
                     {dailySalesData.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
+
+                        <div className="py-12 text-center text-sm text-muted-foreground">
                             No sales data available yet.
-                        </p>
-                    ) : (
-                        <div className="space-y-4">
-                            {dailySalesData.map(([date, amount]) => (
-                                <div key={date}>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span>{date}</span>
-                                        <span className="font-semibold">
-                                            {formatCurrency(amount)}
-                                        </span>
-                                    </div>
-                                    <div className="h-3 rounded-full bg-muted overflow-hidden">
-                                        <div
-                                            className="h-full rounded-full bg-primary"
-                                            style={{
-                                                width: `${(amount / maxDailySales) * 100}%`
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
                         </div>
+
+                    ) : (
+
+                        <div className="mt-6 space-y-5">
+
+                            {dailySalesData.map(([date, amount]) => {
+
+                                const percentage = getPercentage(
+                                    amount,
+                                    maxDailySales
+                                );
+
+                                return (
+                                    <div key={date}>
+
+                                        <div className="flex items-center justify-between gap-4 mb-2">
+
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="h-2 w-2 rounded-full bg-primary shrink-0" />
+
+                                                <span className="text-sm font-medium text-muted-foreground truncate">
+                                                    {date}
+                                                </span>
+                                            </div>
+
+                                            <span className="text-sm font-bold whitespace-nowrap">
+                                                {formatCurrency(amount)}
+                                            </span>
+
+                                        </div>
+
+                                        <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
+
+                                            <div
+                                                className="h-full rounded-full bg-primary transition-all duration-700"
+                                                style={{
+                                                    width: `${percentage}%`,
+                                                }}
+                                            />
+
+                                        </div>
+
+                                        <div className="flex justify-end mt-1">
+                                            <span className="text-[11px] text-muted-foreground">
+                                                {percentage}% of peak daily revenue
+                                            </span>
+                                        </div>
+
+                                    </div>
+                                );
+                            })}
+
+                        </div>
+
                     )}
+
                 </div>
 
-                <div className="bg-card border rounded-xl p-6 shadow-sm">
-                    <h2 className="text-xl font-bold mb-1">
-                        Category-wise Sales
-                    </h2>
-                    <p className="text-sm text-muted-foreground mb-6">
-                        Revenue grouped by product category
-                    </p>
+                {/* Category-wise Sales */}
 
+                <div className="bg-card border rounded-2xl p-6 shadow-sm">
+
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-4">
+
+                        <div>
+                            <div className="flex items-center gap-2">
+
+                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10">
+                                    <BarChart3 className="h-5 w-5 text-emerald-600" />
+                                </div>
+
+                                <h2 className="text-xl font-bold">
+                                    Category-wise Sales
+                                </h2>
+
+                            </div>
+
+                            <p className="text-sm text-muted-foreground mt-3">
+                                Revenue distribution across product categories
+                            </p>
+                        </div>
+
+                        <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+                            Top 6
+                        </span>
+
+                    </div>
+
+                    {/* Summary */}
+                    <div className="mt-6 rounded-xl border bg-muted/30 p-4">
+
+                        <div className="flex items-center justify-between gap-3">
+
+                            <div>
+                                <p className="text-xs font-medium text-muted-foreground">
+                                    Category Revenue
+                                </p>
+
+                                <p className="text-2xl font-extrabold tracking-tight mt-1">
+                                    {formatCurrency(totalCategoryRevenue)}
+                                </p>
+                            </div>
+
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10">
+                                <Layers className="h-5 w-5 text-emerald-600" />
+                            </div>
+
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                            <BarChart3 className="h-3.5 w-3.5" />
+                            <span>Revenue grouped by product category</span>
+                        </div>
+
+                    </div>
+
+                    {/* Category Chart */}
                     {categorySalesData.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
+
+                        <div className="py-12 text-center text-sm text-muted-foreground">
                             No category sales data available yet.
-                        </p>
-                    ) : (
-                        <div className="space-y-4">
-                            {categorySalesData.map(([category, amount]) => (
-                                <div key={category}>
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span>{category}</span>
-                                        <span className="font-semibold">
-                                            {formatCurrency(amount)}
-                                        </span>
-                                    </div>
-                                    <div className="h-3 rounded-full bg-muted overflow-hidden">
-                                        <div
-                                            className="h-full rounded-full bg-emerald-500"
-                                            style={{
-                                                width: `${(amount / maxCategorySales) * 100}%`
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
                         </div>
+
+                    ) : (
+
+                        <div className="mt-6 space-y-5">
+
+                            {categorySalesData.map(
+                                ([category, amount], index) => {
+
+                                    const percentage = getPercentage(
+                                        amount,
+                                        totalCategoryRevenue
+                                    );
+
+                                    const barWidth = getPercentage(
+                                        amount,
+                                        maxCategorySales
+                                    );
+
+                                    return (
+                                        <div key={category}>
+
+                                            <div className="flex items-center justify-between gap-4 mb-2">
+
+                                                <div className="flex items-center gap-3 min-w-0">
+
+                                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold">
+                                                        {index + 1}
+                                                    </span>
+
+                                                    <span className="font-semibold text-sm truncate">
+                                                        {category}
+                                                    </span>
+
+                                                </div>
+
+                                                <div className="text-right shrink-0">
+
+                                                    <p className="text-sm font-bold">
+                                                        {formatCurrency(amount)}
+                                                    </p>
+
+                                                    <p className="text-[11px] text-muted-foreground">
+                                                        {percentage}% share
+                                                    </p>
+
+                                                </div>
+
+                                            </div>
+
+                                            <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
+
+                                                <div
+                                                    className="h-full rounded-full bg-emerald-500 transition-all duration-700"
+                                                    style={{
+                                                        width: `${barWidth}%`,
+                                                    }}
+                                                />
+
+                                            </div>
+
+                                        </div>
+                                    );
+                                }
+                            )}
+
+                        </div>
+
                     )}
+
                 </div>
+
             </div>
 
             {/* Product Creation / Edit Form */}

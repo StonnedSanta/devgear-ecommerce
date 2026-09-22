@@ -1,53 +1,122 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 const CartContext = createContext(null);
 
-export function CartProvider({ children }) {
-    const [cart, setCart] = useState(() => {
+const getProductId = (product) => {
+    return String(product?._id || product?.id || '');
+};
+
+const getInitialCart = () => {
+    try {
         const savedCart = localStorage.getItem('cart');
-        return savedCart ? JSON.parse(savedCart) : [];
-    });
+
+        if (!savedCart) {
+            return [];
+        }
+
+        const parsedCart = JSON.parse(savedCart);
+
+        return Array.isArray(parsedCart) ? parsedCart : [];
+    } catch (error) {
+        console.error('Failed to load cart:', error);
+        return [];
+    }
+};
+
+export function CartProvider({ children }) {
+    const [cart, setCart] = useState(getInitialCart);
 
     useEffect(() => {
-        localStorage.setItem('cart', JSON.stringify(cart));
+        try {
+            localStorage.setItem('cart', JSON.stringify(cart));
+        } catch (error) {
+            console.error('Failed to save cart:', error);
+        }
     }, [cart]);
 
     const addToCart = (product, quantity = 1) => {
-        setCart((prevCart) => {
-            const productId = product._id || product.id;
-            const existingItem = prevCart.find((item) => (item._id || item.id) === productId);
+        const productId = getProductId(product);
+        const safeQuantity = Math.max(1, Number(quantity) || 1);
+
+        if (!productId) {
+            console.error('Cannot add product without an ID:', product);
+            return;
+        }
+
+        setCart((previousCart) => {
+            const existingItem = previousCart.find(
+                (item) => getProductId(item) === productId
+            );
 
             if (existingItem) {
-                return prevCart.map((item) =>
-                    (item._id || item.id) === productId
-                        ? { ...item, quantity: item.quantity + quantity }
+                return previousCart.map((item) =>
+                    getProductId(item) === productId
+                        ? {
+                            ...item,
+                            quantity: item.quantity + safeQuantity,
+                        }
                         : item
                 );
             }
-            return [...prevCart, { ...product, quantity }];
+
+            // Preserve the complete product, including its image
+            return [
+                ...previousCart,
+                {
+                    ...product,
+                    quantity: safeQuantity,
+                },
+            ];
         });
     };
 
     const removeFromCart = (id) => {
-        setCart((prevCart) => prevCart.filter((item) => (item._id || item.id) !== id));
-    };
+        const productId = String(id);
 
-    const updateQuantity = (id, quantity) => {
-        if (quantity <= 0) {
-            removeFromCart(id);
-            return;
-        }
-        setCart((prevCart) =>
-            prevCart.map((item) =>
-                (item._id || item.id) === id ? { ...item, quantity } : item
+        setCart((previousCart) =>
+            previousCart.filter(
+                (item) => getProductId(item) !== productId
             )
         );
     };
 
-    const clearCart = () => setCart([]);
+    const updateQuantity = (id, quantity) => {
+        const productId = String(id);
+        const safeQuantity = Number(quantity);
 
-    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    const totalPrice = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * item.quantity, 0);
+        if (!Number.isFinite(safeQuantity) || safeQuantity <= 0) {
+            removeFromCart(productId);
+            return;
+        }
+
+        setCart((previousCart) =>
+            previousCart.map((item) =>
+                getProductId(item) === productId
+                    ? {
+                        ...item,
+                        quantity: Math.floor(safeQuantity),
+                    }
+                    : item
+            )
+        );
+    };
+
+    const clearCart = () => {
+        setCart([]);
+    };
+
+    const totalItems = cart.reduce(
+        (sum, item) => sum + (Number(item.quantity) || 0),
+        0
+    );
+
+    const totalPrice = cart.reduce(
+        (sum, item) =>
+            sum +
+            (Number(item.price) || 0) *
+            (Number(item.quantity) || 0),
+        0
+    );
 
     return (
         <CartContext.Provider
@@ -66,4 +135,12 @@ export function CartProvider({ children }) {
     );
 }
 
-export const useCart = () => useContext(CartContext);
+export const useCart = () => {
+    const context = useContext(CartContext);
+
+    if (!context) {
+        throw new Error('useCart must be used inside a CartProvider');
+    }
+
+    return context;
+};

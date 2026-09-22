@@ -15,9 +15,9 @@ export default function Navbar() {
           <span>DevGear</span>
         </Link>
         <nav className="flex items-center gap-6">
-          <Link to="/" className="hover:text-primary font-medium transition-colors">
+          {/* <Link to="/" className="hover:text-primary font-medium transition-colors">
             Catalog
-          </Link>
+          </Link> */}
 
           <Link to="/cart" className="relative flex items-center gap-1 hover:text-primary font-medium transition-colors">
             <ShoppingCart className="w-5 h-5" />
