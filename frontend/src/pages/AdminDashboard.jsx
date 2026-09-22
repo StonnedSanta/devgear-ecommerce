@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import API from '../api/axios';
-import { Plus, Trash2, Edit, XCircle } from 'lucide-react';
+import { Plus, Trash2, Edit, XCircle, DollarSign, ShoppingCart, AlertTriangle } from 'lucide-react';
 
 const EMPTY_FORM = {
     title: '',
@@ -18,6 +18,7 @@ export default function AdminDashboard() {
     const [formData, setFormData] = useState(EMPTY_FORM);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [orders, setOrders] = useState([]);
 
     const fetchProducts = async () => {
         try {
@@ -43,6 +44,7 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         fetchProducts();
+        fetchOrders();
     }, []);
 
     const handleChange = (e) => {
@@ -52,6 +54,20 @@ export default function AdminDashboard() {
             ...previous,
             [name]: value,
         }));
+    };
+
+    const fetchOrders = async () => {
+        try {
+            const res = await API.get('/admin/orders');
+
+            setOrders(
+                Array.isArray(res.data)
+                    ? res.data
+                    : []
+            );
+        } catch (err) {
+            console.error('Error fetching orders:', err);
+        }
     };
 
     const handleEditClick = (product) => {
@@ -139,6 +155,64 @@ export default function AdminDashboard() {
         }
     };
 
+    const totalRevenue = orders.reduce(
+        (sum, order) => sum + Number(order.totalAmount || 0),
+        0
+    );
+
+    const totalOrders = orders.length;
+
+    const lowStockProducts = products.filter(
+        (product) => Number(product.stock) <= 5
+    );
+
+    const categorySales = orders.reduce((accumulator, order) => {
+        (order.items || []).forEach((item) => {
+            const category =
+                products.find(
+                    (product) =>
+                        String(product._id) === String(item.productId)
+                )?.category || 'Other';
+
+            const itemRevenue =
+                Number(item.price || 0) * Number(item.quantity || 0);
+
+            accumulator[category] =
+                (accumulator[category] || 0) + itemRevenue;
+        });
+
+        return accumulator;
+    }, {});
+
+    const categorySalesData = Object.entries(categorySales)
+        .sort(([, first], [, second]) => second - first)
+        .slice(0, 6);
+
+    const dailySales = orders.reduce((accumulator, order) => {
+        const date = order.createdAt
+            ? new Date(order.createdAt).toLocaleDateString()
+            : 'Unknown';
+
+        accumulator[date] =
+            (accumulator[date] || 0) + Number(order.totalAmount || 0);
+
+        return accumulator;
+    }, {});
+
+    const dailySalesData = Object.entries(dailySales)
+        .sort(([first], [second]) => new Date(first) - new Date(second))
+        .slice(-7);
+
+    const maxCategorySales = Math.max(
+        ...categorySalesData.map(([, amount]) => amount),
+        1
+    );
+
+    const maxDailySales = Math.max(
+        ...dailySalesData.map(([, amount]) => amount),
+        1
+    );
+
     return (
         <div className="space-y-8">
             <div>
@@ -162,6 +236,120 @@ export default function AdminDashboard() {
                     {success}
                 </div>
             )}
+
+            {/* Analytics Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-card border rounded-xl p-5 shadow-sm">
+                    <p className="text-sm text-muted-foreground">
+                        Total Revenue
+                    </p>
+                    <h2 className="text-2xl font-bold mt-1">
+                        ${totalRevenue.toFixed(2)}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Across all created orders
+                    </p>
+                </div>
+
+                <div className="bg-card border rounded-xl p-5 shadow-sm">
+                    <p className="text-sm text-muted-foreground">
+                        Total Orders
+                    </p>
+                    <h2 className="text-2xl font-bold mt-1">
+                        {totalOrders}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Orders recorded in the system
+                    </p>
+                </div>
+
+                <div className="bg-card border rounded-xl p-5 shadow-sm">
+                    <p className="text-sm text-muted-foreground">
+                        Low Stock Items
+                    </p>
+                    <h2 className="text-2xl font-bold mt-1">
+                        {lowStockProducts.length}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Products with five or fewer units
+                    </p>
+                </div>
+            </div>
+
+            {/* Sales Analytics */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-card border rounded-xl p-6 shadow-sm">
+                    <h2 className="text-xl font-bold mb-1">
+                        Sales Trend
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Revenue from the last seven order dates
+                    </p>
+
+                    {dailySalesData.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No sales data available yet.
+                        </p>
+                    ) : (
+                        <div className="space-y-4">
+                            {dailySalesData.map(([date, amount]) => (
+                                <div key={date}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span>{date}</span>
+                                        <span className="font-semibold">
+                                            ${amount.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="h-3 rounded-full bg-muted overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full bg-primary"
+                                            style={{
+                                                width: `${(amount / maxDailySales) * 100}%`
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="bg-card border rounded-xl p-6 shadow-sm">
+                    <h2 className="text-xl font-bold mb-1">
+                        Category-wise Sales
+                    </h2>
+                    <p className="text-sm text-muted-foreground mb-6">
+                        Revenue grouped by product category
+                    </p>
+
+                    {categorySalesData.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No category sales data available yet.
+                        </p>
+                    ) : (
+                        <div className="space-y-4">
+                            {categorySalesData.map(([category, amount]) => (
+                                <div key={category}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span>{category}</span>
+                                        <span className="font-semibold">
+                                            ${amount.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <div className="h-3 rounded-full bg-muted overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full bg-emerald-500"
+                                            style={{
+                                                width: `${(amount / maxCategorySales) * 100}%`
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* Product Creation / Edit Form */}
             <div className="bg-card border rounded-xl p-6 shadow-sm">
