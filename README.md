@@ -1,80 +1,169 @@
-# DevGear E-Commerce Application
+# DevGear — E-Commerce Application
 
-DevGear is a full-stack MERN e-commerce application designed for developers to browse, filter, and purchase tech gear and development tools.
+DevGear is a full-stack MERN e-commerce application built for developers, designers, and creators to browse and purchase technology products and accessories.
+
+## Live Demo
+
+- **Frontend:** https://devgear-ecommerce.vercel.app
+- **Backend:** https://devgear-ecommerce.onrender.com
+- **GitHub:** https://github.com/StonnedSanta/devgear-ecommerce
+
+> The backend is hosted on Render, so the first request after inactivity may take a few seconds while the service wakes up.
+
+## Features
+
+### Customer
+
+- Browse products and view product details
+- Add, update, and remove cart items
+- JWT-based authentication
+- Cash on Delivery (COD)
+- Razorpay test-mode card payments
+- Stock availability validation
+- Responsive user interface
+
+### Admin
+
+- Protected admin dashboard
+- Create, update, and delete products
+- Manage prices, categories, descriptions, images, and stock
+- View total revenue and orders
+- Monitor low-stock products
+- Sales trend and category-wise sales analytics
 
 ## Tech Stack
 
-- **Frontend:** React, Vite, Axios, Tailwind CSS
+- **Frontend:** React, Vite, Tailwind CSS, Axios
 - **Backend:** Node.js, Express.js
-- **Database:** MongoDB Atlas (Mongoose ODM)
+- **Database:** MongoDB Atlas, Mongoose
+- **Authentication:** JWT, BCrypt
+- **Payments:** Razorpay Test Mode
 - **Deployment:** Vercel (Frontend), Render (Backend)
 
-## Environment Variables
+## Project Structure
 
-### Frontend Configuration (frontend/.env)
-- `VITE_API_URL`: Base API URL for backend communication (e.g., `http://localhost:5000/api` locally or `https://devgear-backend.onrender.com/api` in production).
+```text
+devgear-ecommerce/
+├── backend/
+│   ├── models/
+│   ├── routes/
+│   ├── middleware/
+│   ├── server.js
+│   └── package.json
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── context/
+│   │   ├── pages/
+│   │   └── services/
+│   └── package.json
+└── README.md
+```
 
-### Backend Configuration (backend/.env)
-- `PORT`: Local server port (e.g., `5000`)
-- `MONGO_URI`: MongoDB connection string
-- `JWT_SECRET`: Secret key for authentication tokens
-- `CLIENT_URL`: Frontend client origin for CORS configuration
+## Local Setup
 
-## Local Development Setup
+### 1. Clone the repository
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/devgear-ecommerce.git
-   cd devgear-ecommerce
-   ```
+```bash
+git clone https://github.com/StonnedSanta/devgear-ecommerce
+cd devgear-ecommerce
+```
 
-2. **Install dependencies:**
-   ```bash
-   # Backend
-   cd backend
-   npm install
+### 2. Install dependencies
 
-   # Frontend
-   cd ../frontend
-   npm install
-   ```
+```bash
+cd backend
+npm install
 
-3. **Run local servers:**
-   - Start the backend server (`http://localhost:5000`):
-     ```bash
-     cd backend
-     npm run dev
-     ```
-   - Start the frontend development server (`http://localhost:5173`):
-     ```bash
-     cd frontend
-     npm run dev
-     ```
+cd ../frontend
+npm install
+```
 
-## Database Seeding
+### 3. Configure environment variables
 
-- **Seed local database:**
-  ```bash
-  cd backend
-  npm run seed
-  ```
+**Frontend (`frontend/.env`)**
 
-- **Seed production database (MongoDB Atlas):**
-  ```bash
-  cd backend
-  MONGO_URI="mongodb+srv://<username>:<password>@cluster0.xxxx.mongodb.net/devgear?retryWrites=true&w=majority" npm run seed
-  ```
+```env
+VITE_API_URL=http://localhost:5000/api
+```
+
+**Backend (`backend/.env`)**
+
+```env
+PORT=5000
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
+FRONTEND_URL=http://localhost:5173
+RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+```
+
+### 4. Run the application
+
+**Backend:**
+
+```bash
+cd backend
+npm start
+```
+
+**Frontend:**
+
+```bash
+cd frontend
+npm run dev
+```
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:5000`
+
+## API Overview
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| POST | `/api/auth/register` | Register user |
+| POST | `/api/auth/login` | Login |
+| GET | `/api/products` | Get products |
+| POST | `/api/products` | Create product |
+| PUT | `/api/products/:id` | Update product |
+| DELETE | `/api/products/:id` | Delete product |
+| POST | `/api/orders` | Create order |
+| GET | `/api/admin/orders` | Get admin orders |
+| POST | `/api/payments/create-order` | Create payment |
+| POST | `/api/payments/verify` | Verify payment |
 
 ## Deployment
 
-### Backend (Render)
-1. Create a Web Service connected to your repository.
-2. Set root directory to `backend`.
-3. Set build command to `npm install` and start command to `node server.js`.
-4. Configure environment variables (`MONGO_URI`, `JWT_SECRET`, `CLIENT_URL`).
+### Backend — Render
 
-### Frontend (Vercel)
-1. Import your repository into Vercel with the root directory set to `frontend`.
-2. Select Vite as the framework preset.
-3. Add the `VITE_API_URL` environment variable as a Config type.
-4. Deploy.
+- Root directory: `backend`
+- Build command: `npm install`
+- Start command: `node server.js`
+- Configure MongoDB, JWT, CORS, and Razorpay environment variables.
+
+### Frontend — Vercel
+
+- Root directory: `frontend`
+- Framework: Vite
+- Environment variable:
+
+```env
+VITE_API_URL=https://devgear-ecommerce.onrender.com/api
+```
+
+## Security
+
+- Passwords are hashed using BCrypt.
+- JWT authentication and role-based authorization are implemented.
+- Admin routes are protected.
+- Product stock is validated during order creation.
+- Sensitive credentials are stored in environment variables.
+
+> Razorpay is configured for test-mode payments. Never commit secrets or `.env` files to the repository.
+
+## Author
+
+**Anuj Srivastava**
+
+Built as a technical assignment for the Full Stack Web Developer selection process.
