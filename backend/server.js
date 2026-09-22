@@ -377,8 +377,10 @@ app.delete(
 
 // ORDER ROUTES
 
-// Create an order
+
 app.post('/api/orders', async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const {
       customerName,
@@ -413,9 +415,7 @@ app.post('/api/orders', async (req, res) => {
       'COD'
     ];
 
-    if (
-      !validPaymentMethods.includes(paymentMethod)
-    ) {
+    if (!validPaymentMethods.includes(paymentMethod)) {
       return res.status(400).json({
         message: 'Invalid payment method'
       });
@@ -462,80 +462,111 @@ app.post('/api/orders', async (req, res) => {
       ...quantityByProduct.keys()
     ];
 
-    // Fetch products from the database
-    const products = await Product.find({
-      _id: {
-        $in: productIds
+    await session.withTransaction(async () => {
+      // Fetch products inside the transaction
+      const products = await Product.find({
+        _id: {
+          $in: productIds
+        }
+      }).session(session);
+
+      if (products.length !== productIds.length) {
+        throw new Error('One or more products do not exist');
       }
-    });
 
-    if (
-      products.length !== productIds.length
-    ) {
-      return res.status(400).json({
-        message: 'One or more products do not exist'
-      });
-    }
+      const productMap = new Map(
+        products.map((product) => [
+          product._id.toString(),
+          product
+        ])
+      );
 
-    const productMap = new Map(
-      products.map((product) => [
-        product._id.toString(),
-        product
-      ])
-    );
+      const orderItems = [];
+      let totalAmount = 0;
 
-    const orderItems = [];
-    let totalAmount = 0;
+      // Validate stock and prepare order items
+      for (
+        const [productId, quantity]
+        of quantityByProduct
+      ) {
+        const product = productMap.get(productId);
 
-    // Calculate total using database prices
-    for (
-      const [productId, quantity]
-      of quantityByProduct
-    ) {
-      const product = productMap.get(productId);
+        if (!product) {
+          throw new Error('Product not found');
+        }
 
-      if (!product) {
-        return res.status(404).json({
-          message: 'Product not found'
+        if (product.stock < quantity) {
+          throw new Error(
+            `Insufficient stock for ${product.title}`
+          );
+        }
+
+        const itemTotal =
+          product.price * quantity;
+
+        totalAmount += itemTotal;
+
+        orderItems.push({
+          productId: product._id,
+          title: product.title,
+          price: product.price,
+          quantity
         });
       }
 
-      if (product.stock < quantity) {
-        return res.status(400).json({
-          message: `Insufficient stock for ${product.title}`
-        });
+      totalAmount = Number(
+        totalAmount.toFixed(2)
+      );
+
+      // Deduct stock atomically
+      for (
+        const [productId, quantity]
+        of quantityByProduct
+      ) {
+        const updatedProduct =
+          await Product.findOneAndUpdate(
+            {
+              _id: productId,
+              stock: {
+                $gte: quantity
+              }
+            },
+            {
+              $inc: {
+                stock: -quantity
+              }
+            },
+            {
+              new: true,
+              session
+            }
+          );
+
+        if (!updatedProduct) {
+          throw new Error(
+            'Stock changed. Please review your cart and try again.'
+          );
+        }
       }
 
-      const itemTotal =
-        product.price * quantity;
+      // Create order
+      const orderId = createOrderId();
 
-      totalAmount += itemTotal;
-
-      orderItems.push({
-        productId: product._id,
-        title: product.title,
-        price: product.price,
-        quantity
+      const newOrder = new Order({
+        orderId,
+        customerName: customerName.trim(),
+        items: orderItems,
+        totalAmount,
+        paymentMethod
       });
-    }
 
-    totalAmount = Number(
-      totalAmount.toFixed(2)
-    );
+      await newOrder.save({ session });
 
-    const orderId = createOrderId();
-
-    const newOrder = new Order({
-      orderId,
-      customerName: customerName.trim(),
-      items: orderItems,
-      totalAmount,
-      paymentMethod
+      // Store the created order for the response
+      req.createdOrder = newOrder;
     });
 
-    await newOrder.save();
-
-    return res.status(201).json(newOrder);
+    return res.status(201).json(req.createdOrder);
   } catch (error) {
     console.error(
       'Create order error:',
@@ -543,8 +574,10 @@ app.post('/api/orders', async (req, res) => {
     );
 
     return res.status(400).json({
-      message: 'Unable to create order'
+      message: error.message || 'Failed to create order'
     });
+  } finally {
+    await session.endSession();
   }
 });
 
